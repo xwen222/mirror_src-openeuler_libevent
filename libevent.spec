@@ -1,6 +1,6 @@
 Name:           libevent
 Version:        2.1.11
-Release:        1
+Release:        3
 Summary:        An event notification library
 
 License:        BSD
@@ -37,7 +37,6 @@ with %{name}.
 cp -a %{_libdir}/libevent* %{buildroot}%{_libdir}
 rm -f %{buildroot}%{_libdir}/*.la
 
-
 %check
 make check
 
@@ -70,5 +69,17 @@ make check
 
 
 %changelog
+* Wed Oct 30 2019 shenyangyang <shenyangyang4@huawei.com> - 2.1.11-3
+- Type:bugfix
+- ID:NA
+- SUG:NA
+- DESC:add debugsource package
+
+* Mon Oct 28 2019 chengquan <chengquan3@huawei.com> - 2.1.11-2
+- Type:bugfix
+- ID:NA
+- SUG:NA
+- DESC:add global marco of debug_package
+
 * Tue Aug 27 2019 openEuler Buildteam <buildteam@openeuler.org> - 2.1.11-1
 - Package init
