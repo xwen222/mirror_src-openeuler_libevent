@@ -1,6 +1,8 @@
+%global debug_package %{nil}
+
 Name:           libevent
 Version:        2.1.11
-Release:        3
+Release:        2
 Summary:        An event notification library
 
 License:        BSD
@@ -69,12 +71,6 @@ make check
 
 
 %changelog
-* Wed Oct 30 2019 shenyangyang <shenyangyang4@huawei.com> - 2.1.11-3
-- Type:bugfix
-- ID:NA
-- SUG:NA
-- DESC:add debugsource package
-
 * Mon Oct 28 2019 chengquan <chengquan3@huawei.com> - 2.1.11-2
 - Type:bugfix
 - ID:NA
