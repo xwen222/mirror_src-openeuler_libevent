@@ -1,0 +1,66 @@
+From 37dbb3508099d49748453166c1ee9ef1603fcf3a Mon Sep 17 00:00:00 2001
+From: Azat Khuzhin <azat@libevent.org>
+Date: Thu, 25 Jun 2020 08:45:34 +0300
+Subject: [PATCH] http: fix undefined-shift in EVUTIL_IS*_ helpers
+
+evutil.c:2559:1: runtime error: left shift of 1 by 31 places cannot be represented in type 'int'
+    #0 0x4f2be0 in EVUTIL_ISXDIGIT_ libevent/evutil.c:2559:1
+    #1 0x4bd689 in regname_ok libevent/http.c:4838:7
+    #2 0x4bc16b in parse_authority libevent/http.c:4958:9
+    #3 0x4bb8b5 in evhttp_uri_parse_with_flags libevent/http.c:5103:7
+    #4 0x4bb762 in evhttp_uri_parse libevent/http.c:5050:9
+    #5 0x4b8f41 in evhttp_parse_query_impl libevent/http.c:3505:9
+    #6 0x4b8ed7 in evhttp_parse_query libevent/http.c:3569:9
+
+Bug: https://bugs.chromium.org/p/oss-fuzz/issues/detail?id=23291
+Report: https://oss-fuzz.com/testcase-detail/5670743106125824
+---
+ evutil.c            |  2 +-
+ test/regress_util.c | 11 +++++++++++
+ 2 files changed, 12 insertions(+), 1 deletion(-)
+
+diff --git a/evutil.c b/evutil.c
+index eee970a4..93093b0e 100644
+--- a/evutil.c
++++ b/evutil.c
+@@ -2550,7 +2550,7 @@ static const unsigned char EVUTIL_TOLOWER_TABLE[256] = {
+ #define IMPL_CTYPE_FN(name)						\
+ 	int EVUTIL_##name##_(char c) {					\
+ 		ev_uint8_t u = c;					\
+-		return !!(EVUTIL_##name##_TABLE[(u >> 5) & 7] & (1 << (u & 31))); \
++		return !!(EVUTIL_##name##_TABLE[(u >> 5) & 7] & (1U << (u & 31))); \
+ 	}
+ IMPL_CTYPE_FN(ISALPHA)
+ IMPL_CTYPE_FN(ISALNUM)
+diff --git a/test/regress_util.c b/test/regress_util.c
+index 1459387a..f28238c8 100644
+--- a/test/regress_util.c
++++ b/test/regress_util.c
+@@ -988,6 +988,16 @@ end:
+ 	;
+ }
+ 
++static void
++test_EVUTIL_IS_(void *arg)
++{
++	tt_int_op(EVUTIL_ISDIGIT_('0'), ==, 1);
++	tt_int_op(EVUTIL_ISDIGIT_('a'), ==, 0);
++	tt_int_op(EVUTIL_ISDIGIT_('\xff'), ==, 0);
++end:
++	;
++}
++
+ static void
+ test_evutil_getaddrinfo(void *arg)
+ {
+@@ -1787,6 +1797,7 @@ struct testcase_t util_testcases[] = {
+ 	{ "upcast", test_evutil_upcast, 0, NULL, NULL },
+ 	{ "integers", test_evutil_integers, 0, NULL, NULL },
+ 	{ "rand", test_evutil_rand, TT_FORK, NULL, NULL },
++	{ "EVUTIL_IS_", test_EVUTIL_IS_, 0, NULL, NULL },
+ 	{ "getaddrinfo", test_evutil_getaddrinfo, TT_FORK, NULL, NULL },
+ 	{ "getaddrinfo_live", test_evutil_getaddrinfo_live, TT_FORK|TT_OFF_BY_DEFAULT, NULL, NULL },
+ #ifdef _WIN32
+-- 
+2.23.0
+
