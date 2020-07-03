@@ -2,7 +2,7 @@
 
 Name:           libevent
 Version:        2.1.11
-Release:        2
+Release:        3
 Summary:        An event notification library
 
 License:        BSD
@@ -11,8 +11,9 @@ Source0:        https://github.com/libevent/libevent/releases/download/release-%
 
 BuildRequires: gcc doxygen openssl-devel libevent
 
-Patch01: libevent-nonettests.patch
-Patch02: 0103-http-add-callback-to-allow-server-to-decline-and-the.patch
+Patch0: libevent-nonettests.patch
+Patch1: http-add-callback-to-allow-server-to-decline-and-the.patch
+Patch2: http-fix-undefined-shift-in-EVUTIL_IS-_-helpers.patch
 
 %description
 Libevent additionally provides a sophisticated framework for buffered network IO, with support for sockets,
@@ -71,6 +72,12 @@ make check
 
 
 %changelog
+* Wed Jul 1 2020 Liquor <lirui130@huawei.com> - 2.1.11-3
+- Type:bugfix
+- ID:NA
+- SUG:NA
+- DESC:fix undefined-shift in EVUTIL_IS*_ helpers
+
 * Mon Oct 28 2019 chengquan <chengquan3@huawei.com> - 2.1.11-2
 - Type:bugfix
 - ID:NA
