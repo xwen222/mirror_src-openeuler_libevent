@@ -1,0 +1,92 @@
+diff --git a/sample/becat.c b/sample/becat.c
+index ade77c279..00c5a55ee 100644
+--- a/sample/becat.c
++++ b/sample/becat.c
+@@ -63,6 +63,10 @@ struct options
+ 	struct addr dst;
+ 
+ 	int max_read;
++	struct {
++		int read; /* seconds */
++		int write; /* seconds */
++	} timeout;
+ 
+ 	struct {
+ 		int listen:1;
+@@ -154,6 +158,13 @@ be_new(struct context *ctx, struct event_base *base, evutil_socket_t fd)
+ 		SSL_free(ssl);
+ 	return NULL;
+ }
++static int be_set_timeout(struct bufferevent *bev, const struct options *o)
++{
++	struct timeval tv_read = { o->timeout.read, 0 };
++	struct timeval tv_write = { o->timeout.write, 0 };
++	info("Set timeout to (read=%i, write=%i)\n", o->timeout.read, o->timeout.write);
++	return bufferevent_set_timeouts(bev, &tv_read, &tv_write);
++}
+ 
+ #if (OPENSSL_VERSION_NUMBER < 0x10100000L) || \
+ 	(defined(LIBRESSL_VERSION_NUMBER) && LIBRESSL_VERSION_NUMBER < 0x20700000L)
+@@ -259,6 +270,8 @@ static void print_usage(FILE *out, const char *name)
+ 		"  -l   Bind and listen for incoming connections\n"
+ 		"  -k   Accept multiple connections in listen mode\n"
+ 		"  -S   Connect or listen with SSL\n"
++		"  -t   read timeout\n"
++		"  -T   write timeout\n"
+ 		"\n"
+ 		"  -v   Increase verbosity\n"
+ 		"  -h   Print usage\n"
+@@ -273,12 +286,15 @@ static struct options parse_opts(int argc, char **argv)
+ 	o.src.port = o.dst.port = 10024;
+ 	o.max_read = -1;
+ 
+-	while ((opt = getopt(argc, argv, "p:s:R:" "lkSvh")) != -1) {
++	while ((opt = getopt(argc, argv, "p:s:R:t:" "lkSvh")) != -1) {
+ 		switch (opt) {
+ 			case 'p': o.src.port    = atoi(optarg); break;
+ 			case 's': o.src.address = strdup("127.1"); break;
+ 			case 'R': o.max_read    = atoi(optarg); break;
+ 
++			case 't': o.timeout.read  = atoi(optarg); break;
++			case 'T': o.timeout.write = atoi(optarg); break;
++
+ 			case 'l': o.extra.listen = 1; break;
+ 			case 'k': o.extra.keep   = 1; break;
+ 			case 'S': o.extra.ssl    = 1; break;
+@@ -437,7 +453,14 @@ accept_cb(struct evconnlistener *listener, evutil_socket_t fd,
+ 	}
+ 
+ 	bufferevent_setcb(bev, read_cb, write_cb, server_event_cb, ctx);
+-	bufferevent_enable(bev, EV_READ|EV_WRITE);
++	if (bufferevent_enable(bev, EV_READ|EV_WRITE)) {
++		error("Cannot monitor EV_READ|EV_WRITE for server\n");
++		goto err;
++	}
++	if (be_set_timeout(bev, ctx->opts)) {
++		info("Cannot set timeout for server\n");
++		goto err;
++	}
+ 
+ 	/** TODO: support multiple bevs */
+ 	EVUTIL_ASSERT(!ctx->out);
+@@ -498,6 +521,9 @@ int main(int argc, char **argv)
+ 	memset(&ctx, 0, sizeof(ctx));
+ 	ctx.opts = &o;
+ 
++	if (verbose || getenv("EVENT_DEBUG_LOGGING_ALL"))
++		event_enable_debug_logging(EVENT_DBG_ALL);
++
+ 	base = event_base_new();
+ 	if (!base)
+ 		goto err;
+@@ -563,6 +589,10 @@ int main(int argc, char **argv)
+ 			error("Cannot monitor EV_READ|EV_WRITE for client\n");
+ 			goto err;
+ 		}
++		if (be_set_timeout(bev, &o)) {
++			info("Cannot set timeout for client\n");
++			goto err;
++		}
+ 
+ 		if (bufferevent_socket_connect(bev, sa, ss_len)) {
+ 			info("Connection failed\n");
