@@ -1,0 +1,362 @@
+diff --git a/bufferevent_mbedtls.c b/bufferevent_mbedtls.c
+index e188abed8..e535c86f9 100644
+--- a/bufferevent_mbedtls.c
++++ b/bufferevent_mbedtls.c
+@@ -210,7 +210,7 @@ conn_closed(struct bufferevent_ssl *bev_ssl, int when, int errcode, int ret)
+ 	char buf[100];
+ 
+ 	if (when & BEV_EVENT_READING && ret == 0) {
+-		if (bev_ssl->allow_dirty_shutdown)
++		if (bev_ssl->flags & BUFFEREVENT_SSL_DIRTY_SHUTDOWN)
+ 			event = BEV_EVENT_EOF;
+ 	} else {
+ 		mbedtls_strerror(errcode, buf, sizeof(buf));
+diff --git a/bufferevent_openssl.c b/bufferevent_openssl.c
+index 34259ce5a..6ace1e3ae 100644
+--- a/bufferevent_openssl.c
++++ b/bufferevent_openssl.c
+@@ -281,7 +281,7 @@ conn_closed(struct bufferevent_ssl *bev_ssl, int when, int errcode, int ret)
+ 		bufferevent_ssl_put_error(bev_ssl, err);
+ 	}
+ 
+-	if (dirty_shutdown && bev_ssl->allow_dirty_shutdown)
++	if (dirty_shutdown && bev_ssl->flags & BUFFEREVENT_SSL_DIRTY_SHUTDOWN)
+ 		event = BEV_EVENT_EOF;
+ 
+ 	bufferevent_ssl_stop_reading(bev_ssl);
+diff --git a/bufferevent_ssl.c b/bufferevent_ssl.c
+index 5c6956d5d..b34af9af4 100644
+--- a/bufferevent_ssl.c
++++ b/bufferevent_ssl.c
+@@ -328,6 +328,11 @@ do_write(struct bufferevent_ssl *bev_ssl, int atmost)
+ 	else
+ 		atmost = bufferevent_get_write_max_(&bev_ssl->bev);
+ 
++	if (bev_ssl->flags & BUFFEREVENT_SSL_BATCH_WRITE) {
++		/* Try to send as many as we can to avoid Nagle effect */
++		evbuffer_pullup(output, -1);
++	}
++
+ 	n = evbuffer_peek(output, atmost, NULL, space, 8);
+ 	if (n < 0)
+ 		return OP_ERR | result;
+@@ -581,7 +586,7 @@ be_ssl_eventcb(struct bufferevent *bev_base, short what, void *ctx)
+ 	int event = 0;
+ 
+ 	if (what & BEV_EVENT_EOF) {
+-		if (bev_ssl->allow_dirty_shutdown)
++		if (bev_ssl->flags & BUFFEREVENT_SSL_DIRTY_SHUTDOWN)
+ 			event = BEV_EVENT_EOF;
+ 		else
+ 			event = BEV_EVENT_ERROR;
+@@ -1052,41 +1057,91 @@ bufferevent_ssl_new_impl(struct event_base *base,
+ 	return NULL;
+ }
+ 
+-int
+-bufferevent_ssl_get_allow_dirty_shutdown(struct bufferevent *bev)
++unsigned long
++bufferevent_get_ssl_error(struct bufferevent *bev)
+ {
+-	int allow_dirty_shutdown = -1;
++	unsigned long err = 0;
+ 	struct bufferevent_ssl *bev_ssl;
+ 	BEV_LOCK(bev);
+ 	bev_ssl = bufferevent_ssl_upcast(bev);
+-	if (bev_ssl)
+-		allow_dirty_shutdown = bev_ssl->allow_dirty_shutdown;
++	if (bev_ssl && bev_ssl->n_errors) {
++		err = bev_ssl->errors[--bev_ssl->n_errors];
++	}
+ 	BEV_UNLOCK(bev);
+-	return allow_dirty_shutdown;
++	return err;
+ }
+ 
+-void
+-bufferevent_ssl_set_allow_dirty_shutdown(struct bufferevent *bev,
+-    int allow_dirty_shutdown)
++ev_uint64_t bufferevent_ssl_get_flags(struct bufferevent *bev)
+ {
++	ev_uint64_t flags = EV_UINT64_MAX;
+ 	struct bufferevent_ssl *bev_ssl;
++
+ 	BEV_LOCK(bev);
+ 	bev_ssl = bufferevent_ssl_upcast(bev);
+ 	if (bev_ssl)
+-		bev_ssl->allow_dirty_shutdown = !!allow_dirty_shutdown;
++		flags = bev_ssl->flags;
+ 	BEV_UNLOCK(bev);
++
++	return flags;
+ }
++ev_uint64_t bufferevent_ssl_set_flags(struct bufferevent *bev, ev_uint64_t flags)
++{
++	ev_uint64_t old_flags = EV_UINT64_MAX;
++	struct bufferevent_ssl *bev_ssl;
+ 
+-unsigned long
+-bufferevent_get_ssl_error(struct bufferevent *bev)
++	flags &= (BUFFEREVENT_SSL_DIRTY_SHUTDOWN|BUFFEREVENT_SSL_BATCH_WRITE);
++	if (!flags)
++		return old_flags;
++
++	BEV_LOCK(bev);
++	bev_ssl = bufferevent_ssl_upcast(bev);
++	if (bev_ssl) {
++		old_flags = bev_ssl->flags;
++		bev_ssl->flags |= flags;
++	}
++	BEV_UNLOCK(bev);
++
++	return old_flags;
++}
++ev_uint64_t bufferevent_ssl_clear_flags(struct bufferevent *bev, ev_uint64_t flags)
+ {
+-	unsigned long err = 0;
++	ev_uint64_t old_flags = EV_UINT64_MAX;
+ 	struct bufferevent_ssl *bev_ssl;
++
++	flags &= (BUFFEREVENT_SSL_DIRTY_SHUTDOWN|BUFFEREVENT_SSL_BATCH_WRITE);
++	if (!flags)
++		return old_flags;
++
+ 	BEV_LOCK(bev);
+ 	bev_ssl = bufferevent_ssl_upcast(bev);
+-	if (bev_ssl && bev_ssl->n_errors) {
+-		err = bev_ssl->errors[--bev_ssl->n_errors];
++	if (bev_ssl) {
++		old_flags = bev_ssl->flags;
++		bev_ssl->flags &= ~flags;
+ 	}
+ 	BEV_UNLOCK(bev);
+-	return err;
++
++	return old_flags;
++}
++
++int
++bufferevent_ssl_get_allow_dirty_shutdown(struct bufferevent *bev)
++{
++	ev_uint64_t flags = bufferevent_ssl_get_flags(bev);
++	if (flags == EV_UINT64_MAX)
++		return flags;
++	return !!(flags & BUFFEREVENT_SSL_DIRTY_SHUTDOWN);
++}
++
++void
++bufferevent_ssl_set_allow_dirty_shutdown(
++	struct bufferevent *bev, int allow_dirty_shutdown)
++{
++	BEV_LOCK(bev);
++
++	if (allow_dirty_shutdown)
++		bufferevent_ssl_set_flags(bev, BUFFEREVENT_SSL_DIRTY_SHUTDOWN);
++	else
++		bufferevent_ssl_clear_flags(bev, BUFFEREVENT_SSL_DIRTY_SHUTDOWN);
++
++	BEV_UNLOCK(bev);
+ }
+diff --git a/include/event2/bufferevent_ssl.h b/include/event2/bufferevent_ssl.h
+index 69fb40b76..355b632d3 100644
+--- a/include/event2/bufferevent_ssl.h
++++ b/include/event2/bufferevent_ssl.h
+@@ -49,6 +49,35 @@ enum bufferevent_ssl_state {
+ 	BUFFEREVENT_SSL_ACCEPTING = 2
+ };
+ 
++/** Control how to report dirty SSL shutdowns.
++
++    If the peer (or the network, or an attacker) closes the TCP
++    connection before closing the SSL channel, and the protocol is SSL >= v3,
++    this is a "dirty" shutdown.  If BUFFEREVENT_SSL_DIRTY_SHUTDOWN is not set
++    (default), this is reported as BEV_EVENT_ERROR.
++
++    If instead BUFFEREVENT_SSL_DIRTY_SHUTDOWN is set, a dirty shutdown is
++    reported as BEV_EVENT_EOF.
++
++    (Note that if the protocol is < SSLv3, you will always receive
++    BEV_EVENT_EOF, since SSL 2 and earlier cannot distinguish a secure
++    connection close from a dirty one.  This is one reason (among many)
++    not to use SSL 2.)
++*/
++#define BUFFEREVENT_SSL_DIRTY_SHUTDOWN 1
++/** Control writes in the SSL bufferevents.
++
++    By default SSL bufferevent will peek bytes from the buffer as the arrived.
++    with respect to the segment boundaries in the buffer.
++    However, by ignoring these segment boundaries number of packets to send
++    can be decreased.
++
++    This flags will ignore the segment boundaries.
++
++    Useful in conjunction with http layer.
++*/
++#define BUFFEREVENT_SSL_BATCH_WRITE 2
++
+ #if defined(EVENT__HAVE_OPENSSL) || defined(EVENT_IN_DOXYGEN_)
+ /* This is what openssl's SSL objects are underneath. */
+ struct ssl_st;
+@@ -90,28 +119,51 @@ bufferevent_openssl_socket_new(struct event_base *base,
+     enum bufferevent_ssl_state state,
+     int options);
+ 
+-/** Control how to report dirty SSL shutdowns.
+-
+-    If the peer (or the network, or an attacker) closes the TCP
+-    connection before closing the SSL channel, and the protocol is SSL >= v3,
+-    this is a "dirty" shutdown.  If allow_dirty_shutdown is 0 (default),
+-    this is reported as BEV_EVENT_ERROR.
+-
+-    If instead allow_dirty_shutdown=1, a dirty shutdown is reported as
+-    BEV_EVENT_EOF.
+-
+-    (Note that if the protocol is < SSLv3, you will always receive
+-    BEV_EVENT_EOF, since SSL 2 and earlier cannot distinguish a secure
+-    connection close from a dirty one.  This is one reason (among many)
+-    not to use SSL 2.)
+-*/
+-
++/**
++ * Get value of the BUFFEREVENT_SSL_DIRTY_SHUTDOWN flag.
++ *
++ * @see BUFFEREVENT_SSL_DIRTY_SHUTDOWN
++ * @deprecated This function is deprecated, use bufferevent_ssl_get_flags() instead.
++ * @see bufferevent_ssl_get_flags()
++ */
+ EVENT2_EXPORT_SYMBOL
+ int bufferevent_openssl_get_allow_dirty_shutdown(struct bufferevent *bev);
++/**
++ * Set value of the BUFFEREVENT_SSL_DIRTY_SHUTDOWN flag.
++ *
++ * @see BUFFEREVENT_SSL_DIRTY_SHUTDOWN
++ * @deprecated This function is deprecated, use bufferevent_ssl_set_flags() instead.
++ * @see bufferevent_ssl_set_flags()
++ */
+ EVENT2_EXPORT_SYMBOL
+ void bufferevent_openssl_set_allow_dirty_shutdown(struct bufferevent *bev,
+     int allow_dirty_shutdown);
+ 
++/**
++ * Get flags of the SSL bufferevent.
++ *
++ * @see BUFFEREVENT_SSL_*
++ * @return flags or SIZE_MAX in case of error (if bufferevent is not SSL).
++ */
++EVENT2_EXPORT_SYMBOL
++ev_uint64_t bufferevent_ssl_get_flags(struct bufferevent *bev);
++/** Change the flags that are set for an ssl bufferevent by adding more.
++ *
++ * @param bev the ssl bufferevent.
++ * @param flags One or more BUFFEREVENT_SSL_* options
++ * @return old flags success, EV_UINT64_MAX on failure.
++ */
++EVENT2_EXPORT_SYMBOL
++ev_uint64_t bufferevent_ssl_set_flags(struct bufferevent *bev, ev_uint64_t flags);
++/** Change the flags that are set for an ssl bufferevent by removing some.
++ *
++ * @param bev the bufferevent.
++ * @param flags One or more BUFFEREVENT_SSL_* options
++ * @return old flags success, EV_UINT64_MAX on failure.
++ */
++EVENT2_EXPORT_SYMBOL
++ev_uint64_t bufferevent_ssl_clear_flags(struct bufferevent *bev, ev_uint64_t flags);
++
+ /** Return the underlying openssl SSL * object for an SSL bufferevent. */
+ EVENT2_EXPORT_SYMBOL
+ struct ssl_st *
+@@ -165,24 +217,22 @@ bufferevent_mbedtls_socket_new(struct event_base *base,
+     enum bufferevent_ssl_state state,
+     int options);
+ 
+-/** Control how to report dirty SSL shutdowns.
+-
+-    If the peer (or the network, or an attacker) closes the TCP
+-    connection before closing the SSL channel, and the protocol is SSL >= v3,
+-    this is a "dirty" shutdown.  If allow_dirty_shutdown is 0 (default),
+-    this is reported as BEV_EVENT_ERROR.
+-
+-    If instead allow_dirty_shutdown=1, a dirty shutdown is reported as
+-    BEV_EVENT_EOF.
+-
+-    (Note that if the protocol is < SSLv3, you will always receive
+-    BEV_EVENT_EOF, since SSL 2 and earlier cannot distinguish a secure
+-    connection close from a dirty one.  This is one reason (among many)
+-    not to use SSL 2.)
+-*/
+-
++/**
++ * Get value of the BUFFEREVENT_SSL_DIRTY_SHUTDOWN flag.
++ *
++ * @see BUFFEREVENT_SSL_DIRTY_SHUTDOWN
++ * @deprecated This function is deprecated, use bufferevent_ssl_get_flags() instead.
++ * @see bufferevent_ssl_get_flags()
++ */
+ EVENT2_EXPORT_SYMBOL
+ int bufferevent_mbedtls_get_allow_dirty_shutdown(struct bufferevent *bev);
++/**
++ * Set value of the BUFFEREVENT_SSL_DIRTY_SHUTDOWN flag.
++ *
++ * @see BUFFEREVENT_SSL_DIRTY_SHUTDOWN
++ * @deprecated This function is deprecated, use bufferevent_ssl_set_flags() instead.
++ * @see bufferevent_ssl_set_flags()
++ */
+ EVENT2_EXPORT_SYMBOL
+ void bufferevent_mbedtls_set_allow_dirty_shutdown(struct bufferevent *bev,
+     int allow_dirty_shutdown);
+diff --git a/ssl-compat.h b/ssl-compat.h
+index a19c457f7..4dccb52a9 100644
+--- a/ssl-compat.h
++++ b/ssl-compat.h
+@@ -73,8 +73,6 @@ struct bufferevent_ssl {
+ 	unsigned read_blocked_on_write : 1;
+ 	/* When we next get data, we should say "write" instead of "read". */
+ 	unsigned write_blocked_on_read : 1;
+-	/* Treat TCP close before SSL close on SSL >= v3 as clean EOF. */
+-	unsigned allow_dirty_shutdown : 1;
+ 	/* XXX */
+ 	unsigned n_errors : 2;
+ 
+@@ -82,6 +80,8 @@ struct bufferevent_ssl {
+ 	unsigned state : 2;
+ 	/* If we reset fd, we sould reset state too */
+ 	unsigned old_state : 2;
++
++	ev_uint64_t flags;
+ };
+ 
+ struct bufferevent *bufferevent_ssl_new_impl(struct event_base *base,
+diff --git a/test/regress_ssl.c b/test/regress_ssl.c
+index b5c37b808..447a4c34b 100644
+--- a/test/regress_ssl.c
++++ b/test/regress_ssl.c
+@@ -128,6 +128,8 @@ enum regress_openssl_type
+ 	REGRESS_OPENSSL_CLIENT_WRITE = 2048,
+ 
+ 	REGRESS_DEFERRED_CALLBACKS = 4096,
++
++	REGRESS_OPENSSL_BATCH_WRITE = 8192,
+ };
+ 
+ static void
+@@ -299,6 +301,11 @@ open_ssl_bufevs(struct bufferevent **bev1_out, struct bufferevent **bev2_out,
+ 
+ 	bufferevent_ssl_set_allow_dirty_shutdown(*bev1_out, dirty_shutdown);
+ 	bufferevent_ssl_set_allow_dirty_shutdown(*bev2_out, dirty_shutdown);
++
++	if (REGRESS_OPENSSL_BATCH_WRITE) {
++		bufferevent_ssl_set_flags(*bev1_out, BUFFEREVENT_SSL_BATCH_WRITE);
++		bufferevent_ssl_set_flags(*bev2_out, BUFFEREVENT_SSL_BATCH_WRITE);
++	}
+ }
+ 
+ static void
+@@ -730,6 +737,8 @@ struct testcase_t TESTCASES_NAME[] = {
+ #define T(a) ((void *)(a))
+ 	{ "bufferevent_socketpair", regress_bufferevent_openssl,
+ 	  TT_ISOLATED, &ssl_setup, T(REGRESS_OPENSSL_SOCKETPAIR) },
++	{ "bufferevent_socketpair_batch_write", regress_bufferevent_openssl,
++	  TT_ISOLATED, &ssl_setup, T(REGRESS_OPENSSL_SOCKETPAIR | REGRESS_OPENSSL_BATCH_WRITE) },
+ 	{ "bufferevent_socketpair_write_after_connect", regress_bufferevent_openssl,
+ 	  TT_ISOLATED, &ssl_setup,
+ 	  T(REGRESS_OPENSSL_SOCKETPAIR|REGRESS_OPENSSL_CLIENT_WRITE) },
