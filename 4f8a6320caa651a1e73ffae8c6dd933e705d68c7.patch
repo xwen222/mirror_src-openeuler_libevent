@@ -1,0 +1,149 @@
+diff --git a/.github/workflows/macos.yml b/.github/workflows/macos.yml
+index 4c98c320a..5ce4b432f 100644
+--- a/.github/workflows/macos.yml
++++ b/.github/workflows/macos.yml
+@@ -36,6 +36,7 @@ jobs:
+           - TEST_EXPORT_STATIC
+           - TEST_EXPORT_SHARED
+           - OPENSSL_1_1
++          - BREW_AUTODETECT_OPENSSL
+ 
+     steps:
+       - uses: actions/checkout@v2.0.0
+@@ -52,7 +53,10 @@ jobs:
+       - name: Build And Test
+         shell: bash
+         run: |
+-          if [ "${{ matrix.EVENT_MATRIX }}" == "OPENSSL_1_1" ]; then
++          if [ "${{ matrix.EVENT_MATRIX }}" == "BREW_AUTODETECT_OPENSSL" ]; then
++            # use autodetection via brew
++            :
++          elif [ "${{ matrix.EVENT_MATRIX }}" == "OPENSSL_1_1" ]; then
+             export OPENSSL_ROOT_DIR=/usr/local/opt/openssl@1.1
+           else
+             export OPENSSL_ROOT_DIR=/usr/local/opt/openssl
+@@ -121,6 +125,7 @@ jobs:
+           - DISABLE_DEBUG_MODE
+           - DISABLE_MM_REPLACEMENT
+           - OPENSSL_1_1
++          - BREW_AUTODETECT_OPENSSL
+ 
+     steps:
+       - uses: actions/checkout@v2.0.0
+@@ -137,7 +142,10 @@ jobs:
+       - name: Build And Test
+         shell: bash
+         run: |
+-          if [ "${{ matrix.EVENT_MATRIX }}" == "OPENSSL_1_1" ]; then
++          if [ "${{ matrix.EVENT_MATRIX }}" == "BREW_AUTODETECT_OPENSSL" ]; then
++            # use autodetection via brew
++            :
++          elif [ "${{ matrix.EVENT_MATRIX }}" == "OPENSSL_1_1" ]; then
+             export PKG_CONFIG_PATH="/usr/local/opt/openssl@1.1/lib/pkgconfig:$PKG_CONFIG_PATH"
+           else
+             export PKG_CONFIG_PATH="/usr/local/opt/openssl/lib/pkgconfig:$PKG_CONFIG_PATH"
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 0b1888615..6d7da58c4 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -238,6 +238,11 @@ else()
+     message(FATAL_ERROR "${EVENT_LIBRARY_TYPE} is not supported")
+ endif()
+ 
++# brew support
++if (APPLE)
++    find_program(BREW brew)
++endif()
++
+ if (${MSVC})
+     set(msvc_static_runtime OFF)
+     if ("${EVENT_LIBRARY_TYPE}" STREQUAL "STATIC")
+@@ -881,6 +886,20 @@ if(EVENT__HAVE_EVENT_PORTS)
+ endif()
+ 
+ if (NOT EVENT__DISABLE_OPENSSL)
++    # only if OPENSSL_ROOT_DIR is not set yet
++    if (BREW AND NOT OPENSSL_ROOT_DIR AND NOT "$ENV{OPENSSL_ROOT_DIR}")
++        execute_process(COMMAND ${BREW} --prefix openssl
++            OUTPUT_VARIABLE BREW_OPENSSL_PREFIX
++            RESULT_VARIABLE BREW_OPENSSL_RESULT
++            ERROR_QUIET
++            OUTPUT_STRIP_TRAILING_WHITESPACE
++        )
++        if (BREW_OPENSSL_RESULT EQUAL 0)
++            message(STATUS "Set OPENSSL_ROOT_DIR=${BREW_OPENSSL_PREFIX} (from brew)")
++            set(OPENSSL_ROOT_DIR "${BREW_OPENSSL_PREFIX}" CACHE PATH "")
++        endif()
++    endif()
++
+     find_package(OpenSSL REQUIRED)
+ 
+     set(EVENT__HAVE_OPENSSL 1)
+diff --git a/m4/libevent_openssl.m4 b/m4/libevent_openssl.m4
+index a5ea67620..b95d24496 100644
+--- a/m4/libevent_openssl.m4
++++ b/m4/libevent_openssl.m4
+@@ -3,6 +3,33 @@ dnl OpenSSL support
+ AC_DEFUN([LIBEVENT_OPENSSL], [
+ AC_REQUIRE([NTP_PKG_CONFIG])dnl
+ 
++case "$host_os" in
++    darwin*)
++    dnl when compiling for Darwin, attempt to find OpenSSL using brew.
++    dnl We append the location given by brew to PKG_CONFIG_PATH path
++    dnl and then export it, so that it can be used in detection below.
++    AC_CHECK_PROG([BREW],brew, brew)
++    if test x$BREW = xbrew; then
++        openssl_prefix=$($BREW --prefix openssl 2>/dev/null)
++        if test x$openssl_prefix != x; then
++            OPENSSL_LIBS=`$PKG_CONFIG --libs openssl 2>/dev/null`
++            case "$OPENSSL_LIBS" in
++             dnl only if openssl is not in PKG_CONFIG_PATH already
++             '')
++                if test x$PKG_CONFIG_PATH != x; then
++                    PKG_CONFIG_PATH="$PKG_CONFIG_PATH:"
++                fi
++                OPENSSL_PKG_CONFIG="$openssl_prefix/lib/pkgconfig"
++                PKG_CONFIG_PATH="$PKG_CONFIG_PATH$OPENSSL_PKG_CONFIG"
++                export PKG_CONFIG_PATH
++                AC_MSG_NOTICE([PKG_CONFIG_PATH has been set to $PKG_CONFIG_PATH (added openssl from brew)])
++                ;;
++            esac
++        fi
++    fi
++    ;;
++esac
++
+ case "$enable_openssl" in
+  yes)
+     have_openssl=no
+@@ -27,7 +54,7 @@ case "$enable_openssl" in
+ 	LIBS=""
+ 	OPENSSL_LIBS=""
+ 	for lib in crypto eay32; do
+-		# clear cache
++		dnl clear cache
+ 		unset ac_cv_search_SSL_new
+ 		AC_SEARCH_LIBS([SSL_new], [ssl ssl32],
+ 		    [have_openssl=yes
+@@ -47,15 +74,15 @@ case "$enable_openssl" in
+     AC_SUBST(OPENSSL_LIBS)
+     case "$have_openssl" in
+      yes)  AC_DEFINE(HAVE_OPENSSL, 1, [Define if the system has openssl]) ;;
+-     *) AC_MSG_ERROR([openssl is a must but can not be found. You should add the \
+-directory containing `openssl.pc' to the `PKG_CONFIG_PATH' environment variable, \
+-or set `CFLAGS' and `LDFLAGS' directly for openssl, or use `--disable-openssl' \
+-to disable support for openssl encryption])
++     *) AC_MSG_ERROR([OpenSSL could not be found. You should add the directory \
++     containing 'openssl.pc' to the 'PKG_CONFIG_PATH' environment variable, set \
++     'CFLAGS' and 'LDFLAGS' directly, or use '--disable-openssl' to disable \
++     support for OpenSSL encryption])
+ 	;;
+     esac
+     ;;
+ esac
+ 
+-# check if we have and should use openssl
++dnl check if we have and should use OpenSSL
+ AM_CONDITIONAL(OPENSSL, [test "$enable_openssl" != "no" && test "$have_openssl" = "yes"])
+ ])
