@@ -1,0 +1,32 @@
+diff --git a/bufferevent_ssl.c b/bufferevent_ssl.c
+index b34af9af4..a946c162f 100644
+--- a/bufferevent_ssl.c
++++ b/bufferevent_ssl.c
+@@ -739,8 +739,13 @@ be_ssl_handshakeeventcb(evutil_socket_t fd, short what, void *ptr)
+ 	bufferevent_incref_and_lock_(&bev_ssl->bev.bev);
+ 	if (what & EV_TIMEOUT) {
+ 		bufferevent_run_eventcb_(&bev_ssl->bev.bev, BEV_EVENT_TIMEOUT, 0);
+-	} else
+-		do_handshake(bev_ssl);/* XXX handle failure */
++	} else {
++		int c = evutil_socket_finished_connecting_(fd);
++		if (c < 0)
++			bufferevent_run_eventcb_(&bev_ssl->bev.bev, BEV_EVENT_ERROR, 0);
++		else
++			do_handshake(bev_ssl);/* XXX handle failure */
++	}
+ 	bufferevent_decref_and_unlock_(&bev_ssl->bev.bev);
+ }
+ 
+diff --git a/util-internal.h b/util-internal.h
+index 9010b2e37..dabb6d6ba 100644
+--- a/util-internal.h
++++ b/util-internal.h
+@@ -300,6 +300,7 @@ int evutil_read_file_(const char *filename, char **content_out, size_t *len_out,
+ EVENT2_EXPORT_SYMBOL
+ int evutil_socket_connect_(evutil_socket_t *fd_ptr, const struct sockaddr *sa, int socklen);
+ 
++EVENT2_EXPORT_SYMBOL
+ int evutil_socket_finished_connecting_(evutil_socket_t fd);
+ 
+ #ifdef EVENT__HAVE_AFUNIX_H
