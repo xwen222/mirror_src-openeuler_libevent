@@ -2,7 +2,7 @@
 
 Name:           libevent
 Version:        2.1.12
-Release:        1
+Release:        2
 Summary:        An event notification library
 
 License:        BSD
@@ -13,6 +13,7 @@ BuildRequires: gcc doxygen openssl-devel libevent
 
 Patch0: libevent-nonettests.patch
 Patch1: http-add-callback-to-allow-server-to-decline-and-the.patch
+Patch6000: 657e180694a97c6d70d58cd60b82e43dc23ac4b2.patch
 
 %description
 Libevent additionally provides a sophisticated framework for buffered network IO, with support for sockets,
@@ -71,6 +72,9 @@ make check
 
 
 %changelog
+* 20201124033007672351 patch-tracking 2.1.12-2
+- append patch file of upstream repository from <657e180694a97c6d70d58cd60b82e43dc23ac4b2> to <657e180694a97c6d70d58cd60b82e43dc23ac4b2>
+
 * Thu Jul 30 2020 yang_zhuang_zhuang <yangzhuangzhuang1@huawei.com> - 2.1.12-1
 - Type:enhancement
 - ID:NA
