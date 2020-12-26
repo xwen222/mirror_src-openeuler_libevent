@@ -1,0 +1,12 @@
+diff --git a/evdns.c b/evdns.c
+index 8df185685..14a643984 100644
+--- a/evdns.c
++++ b/evdns.c
+@@ -28,7 +28,6 @@
+  *
+  * Async DNS Library
+  * Adam Langley <agl@imperialviolet.org>
+- * http://www.imperialviolet.org/eventdns.html
+  * Public Domain code
+  *
+  * This software is Public Domain. To view a copy of the public domain dedication,
