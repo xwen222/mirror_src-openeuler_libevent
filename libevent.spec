@@ -2,7 +2,7 @@
 
 Name:           libevent
 Version:        2.1.12
-Release:        1
+Release:        2
 Summary:        An event notification library
 
 License:        BSD
@@ -39,6 +39,10 @@ with %{name}.
 cp -a %{_libdir}/libevent* %{buildroot}%{_libdir}
 rm -f %{buildroot}%{_libdir}/*.la
 
+pushd %{buildroot}%{_libdir}
+strip libevent*.so*
+popd
+
 %check
 make check
 
@@ -71,6 +75,12 @@ make check
 
 
 %changelog
+* Sat Mar 20 2021 shenyangyang <shenyangyang4@huawei.com> - 2.1.12-2
+- Type:enhancement
+- ID:NA
+- SUG:NA
+- DESC:Strip libevent so
+
 * Thu Jul 30 2020 yang_zhuang_zhuang <yangzhuangzhuang1@huawei.com> - 2.1.12-1
 - Type:enhancement
 - ID:NA
