@@ -1,15 +1,13 @@
-%global debug_package %{nil}
-
 Name:           libevent
 Version:        2.1.12
-Release:        2
+Release:        3
 Summary:        An event notification library
 
 License:        BSD
 URL:            http://libevent.org/
 Source0:        https://github.com/libevent/libevent/releases/download/release-%{version}-stable/libevent-%{version}-stable.tar.gz
 
-BuildRequires: gcc doxygen openssl-devel libevent
+BuildRequires: gcc doxygen openssl-devel
 
 Patch0: libevent-nonettests.patch
 Patch1: http-add-callback-to-allow-server-to-decline-and-the.patch
@@ -36,12 +34,7 @@ with %{name}.
 
 %install
 %make_install
-cp -a %{_libdir}/libevent* %{buildroot}%{_libdir}
 rm -f %{buildroot}%{_libdir}/*.la
-
-pushd %{buildroot}%{_libdir}
-strip libevent*.so*
-popd
 
 %check
 make check
@@ -75,6 +68,13 @@ make check
 
 
 %changelog
+* Mon Mar 29 2021 panxiaohe <panxiaohe@huawei.com> - 2.1.12-3
+- Type:enhancement
+- ID:NA
+- SUG:NA
+- DESC:add debuginfo package and make ELF files stripped
+       remove redundant ABI compatibility library
+
 * Sat Mar 20 2021 shenyangyang <shenyangyang4@huawei.com> - 2.1.12-2
 - Type:enhancement
 - ID:NA
