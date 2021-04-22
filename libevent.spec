@@ -1,6 +1,6 @@
 Name:           libevent
 Version:        2.1.12
-Release:        2
+Release:        3
 Summary:        An event notification library
 
 License:        BSD
@@ -37,7 +37,7 @@ with %{name}.
 rm -f %{buildroot}%{_libdir}/*.la
 
 %check
-make check
+%make_build check
 
 %ldconfig_scriptlets
 
@@ -68,6 +68,12 @@ make check
 
 
 %changelog
+* Wed Apr 21 2021 yangzhuangzhuang <yangzhuangzhuang1@huawei.com> - 2.1.12-3
+- Type:enhancement
+- ID:NA
+- SUG:NA
+- DESC:use make macros to run check
+
 * Mon Mar 29 2021 panxiaohe <panxiaohe@huawei.com> - 2.1.12-2
 - Type:enhancement
 - ID:NA
