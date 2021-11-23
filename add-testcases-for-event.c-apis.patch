@@ -1,0 +1,256 @@
+From 1113412e6be9e627e8f4490dc5252051c3d2ddc9 Mon Sep 17 00:00:00 2001
+From: Hubin <h30009454@china.huawei.com>
+Date: Tue, 23 Nov 2021 15:08:15 +0800
+Subject: [PATCH] add testcases for event.c apis
+
+Signed-off-by: Hubin <hubin57@huawei.com>
+---
+ test/regress.c | 230 +++++++++++++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 230 insertions(+)
+
+diff --git a/test/regress.c b/test/regress.c
+index 08c30fa..0704b46 100644
+--- a/test/regress.c
++++ b/test/regress.c
+@@ -3475,7 +3475,237 @@ end:
+ #endif
+ }
+ 
++static void
++test_event_base_del_virtual_(void *ptr)
++{
++	struct basic_test_data *data = ptr;
++	struct event_base *base = data->base;
++	struct event ev;
++	int event_count_active;
++	int event_count_virtual;
++	int event_count_added;
++	int event_count_active_virtual;
++	int event_count_active_added;
++	int event_count_virtual_added;
++	int event_count_active_added_virtual;
++
++	struct timeval qsec = {0, 100000};
++
++	event_assign(&ev, base, -1, EV_READ, event_selfarg_cb,
++	    event_self_cbarg());
++	event_add(&ev, &qsec);
++	event_base_loop(base, 0);
++
++	event_base_add_virtual_(base);
++	event_count_active = event_base_get_num_events(base,
++	EVENT_BASE_COUNT_ACTIVE);
++	event_count_virtual = event_base_get_num_events(base,
++	EVENT_BASE_COUNT_VIRTUAL);
++	event_count_added = event_base_get_num_events(base,
++	EVENT_BASE_COUNT_ADDED);
++	event_count_active_virtual = event_base_get_num_events(base,
++	EVENT_BASE_COUNT_ACTIVE|EVENT_BASE_COUNT_VIRTUAL);
++	event_count_active_added = event_base_get_num_events(base,
++	EVENT_BASE_COUNT_ACTIVE|EVENT_BASE_COUNT_ADDED);
++	event_count_virtual_added = event_base_get_num_events(base,
++	EVENT_BASE_COUNT_VIRTUAL|EVENT_BASE_COUNT_ADDED);
++	event_count_active_added_virtual = event_base_get_num_events(base,
++	EVENT_BASE_COUNT_ACTIVE|
++	EVENT_BASE_COUNT_ADDED|
++	EVENT_BASE_COUNT_VIRTUAL);
++	tt_int_op(event_count_active, ==, 0);
++	tt_int_op(event_count_virtual, ==, 1);
++	tt_int_op(event_count_added, ==, 0);
++	tt_int_op(event_count_active_virtual, ==, 1);
++	tt_int_op(event_count_active_added, ==, 0);
++	tt_int_op(event_count_virtual_added, ==, 1);
++	tt_int_op(event_count_active_added_virtual, ==, 1);
++
++	event_base_del_virtual_(base);
++	event_count_active = event_base_get_num_events(base,
++	EVENT_BASE_COUNT_ACTIVE);
++	event_count_virtual = event_base_get_num_events(base,
++	EVENT_BASE_COUNT_VIRTUAL);
++	event_count_added = event_base_get_num_events(base,
++	EVENT_BASE_COUNT_ADDED);
++	event_count_active_virtual = event_base_get_num_events(base,
++	EVENT_BASE_COUNT_ACTIVE|EVENT_BASE_COUNT_VIRTUAL);
++	event_count_active_added = event_base_get_num_events(base,
++	EVENT_BASE_COUNT_ACTIVE|EVENT_BASE_COUNT_ADDED);
++	event_count_virtual_added = event_base_get_num_events(base,
++	EVENT_BASE_COUNT_VIRTUAL|EVENT_BASE_COUNT_ADDED);
++	event_count_active_added_virtual = event_base_get_num_events(base,
++	EVENT_BASE_COUNT_ACTIVE|
++	EVENT_BASE_COUNT_ADDED|
++	EVENT_BASE_COUNT_VIRTUAL);
++	tt_int_op(event_count_active, ==, 0);
++	tt_int_op(event_count_virtual, ==, 0);
++	tt_int_op(event_count_added, ==, 0);
++	tt_int_op(event_count_active_virtual, ==, 0);
++	tt_int_op(event_count_active_added, ==, 0);
++	tt_int_op(event_count_virtual_added, ==, 0);
++	tt_int_op(event_count_active_added_virtual, ==, 0);
++end:
++	;
++}
++
++static void
++test_event_deferred_cb_set_priority_(void *arg)
++{
++	struct basic_test_data *data = arg;
++	struct event_base *base = data->base;
++	struct event_callback evcb;
++	event_callback_init_(base, &evcb);
++	event_deferred_cb_set_priority_(&evcb, 0);
++	tt_int_op(evcb.evcb_pri, ==, 0);
++end:
++	;
++}
++
++static void
++test_event_callback_init_(void *arg)
++{
++	struct basic_test_data *data = arg;
++	struct event_base *base = data->base;
++	struct event_callback evcb;
++
++	event_callback_init_(base, &evcb);
++	tt_int_op(evcb.evcb_pri, ==, 0);
++end:
++	;
++}
++
++static void
++test_event_del_block(void *ptr)
++{
++	struct basic_test_data *data = ptr;
++	struct event_base *base = data->base;
++	struct timeval tv;
++	struct event ev;
++	int count = 0;
++	int res_del = 0;
++
++	evutil_timerclear(&tv);
++	tv.tv_usec = 10000;
++
++	event_assign(&ev, base, -1, EV_TIMEOUT|EV_PERSIST,
++	    timeout_cb, &count);
++	event_add(&ev, &tv);
++
++	res_del = event_del_block(&ev);
++	tt_int_op(res_del, ==, 0);
++end:
++	;
++}
++
++static void
++test_event_del_noblock(void *ptr) {
++	struct basic_test_data *data = ptr;
++	struct event_base *base = data->base;
++	struct timeval tv;
++	struct event ev;
++	int count = 0;
++	int res_del = 0;
++
++	evutil_timerclear(&tv);
++	tv.tv_usec = 10000;
++
++	event_assign(&ev, base, -1, EV_TIMEOUT|EV_PERSIST,
++	    timeout_cb, &count);
++	event_add(&ev, &tv);
++
++	res_del = event_del_noblock(&ev);
++	tt_int_op(res_del, ==, 0);
++end:
++	;
++}
++
++static void
++test_event_get_events(void *ptr) {
++	struct basic_test_data *data = ptr;
++	struct event *r=NULL, *w=NULL;
++
++	r = event_new(data->base, data->pair[0], EV_READ, simple_read_cb,
++	    NULL);
++	w = event_new(data->base, data->pair[1], EV_WRITE, simple_write_cb,
++	    NULL);
++
++	event_add(r, NULL);
++	event_add(w, NULL);
++
++	tt_int_op(event_get_events(r), ==, EV_READ);
++	tt_int_op(event_get_events(w), ==, EV_WRITE);
++
++	event_free(r);
++	event_free(w);
++end:
++	;
++}
++
++static void
++test_event_config_set_max_dispatch_interval(void)
++{
++	struct event_config *cfg = NULL;
++	struct timeval tv;
++	int max_dispatch_cbs = 100;
++	int min_priority = 2;
++
++	evutil_timerclear(&tv);
++	tv.tv_sec = 3;
++	tv.tv_usec = 0;
++
++	cfg = event_config_new();
++	event_config_set_max_dispatch_interval(cfg, &tv, max_dispatch_cbs, min_priority);
++
++	tt_assert(max_dispatch_cbs == cfg->max_dispatch_callbacks);
++	tt_assert(min_priority == cfg->limit_callbacks_after_prio);
++	tt_assert(3 == cfg->max_dispatch_interval.tv_sec);
++	tt_assert(0 == cfg->max_dispatch_interval.tv_usec);
++end:
++	if (cfg)
++		event_config_free(cfg);
++}
++
++static void
++test_event_config_set_num_cpus_hint(void)
++{
++	struct event_config *cfg = NULL;
++	int n_cpus = 4;
++
++	cfg = event_config_new();
++	event_config_set_num_cpus_hint(cfg, 4);
++	tt_assert(4 == cfg->n_cpus_hint);
++end:
++	if (cfg)
++		event_config_free(cfg);
++}
++
++static void
++test_event_base_stop_iocp_(void *arg)
++{
++	struct basic_test_data *data = arg;
++	struct event_base *base = data->base;
++#ifndef _WIN32
++	int res = event_base_start_iocp_(base);
++	tt_int_op(res, ==, -1);
++	event_base_stop_iocp_(base);
++#endif
++end:
++	;
++}
++
+ struct testcase_t main_testcases[] = {
++	/* event.c api tests */
++	BASIC(event_base_del_virtual_, TT_FORK|TT_NEED_BASE),
++	BASIC(event_deferred_cb_set_priority_, TT_FORK|TT_NEED_BASE),
++	BASIC(event_callback_init_, TT_FORK|TT_NEED_BASE),
++	BASIC(event_del_noblock, TT_FORK|TT_NEED_BASE),
++	BASIC(event_del_block, TT_FORK|TT_NEED_BASE),
++	BASIC(event_get_events, TT_FORK|TT_NEED_BASE|TT_NEED_SOCKETPAIR),
++	BASIC(event_config_set_max_dispatch_interval, TT_FORK|TT_NEED_BASE),
++	BASIC(event_config_set_num_cpus_hint, TT_FORK|TT_NEED_BASE),
++	BASIC(event_base_stop_iocp_, TT_FORK|TT_NEED_BASE),
++
+ 	/* Some converted-over tests */
+ 	{ "methods", test_methods, TT_FORK, NULL, NULL },
+ 	{ "version", test_version, 0, NULL, NULL },
+-- 
+2.32.0.windows.2
+
+
