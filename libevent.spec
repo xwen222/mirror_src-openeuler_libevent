@@ -1,6 +1,6 @@
 Name:           libevent
 Version:        2.1.12
-Release:        5
+Release:        6
 Summary:        An event notification library
 
 License:        BSD
@@ -12,6 +12,12 @@ BuildRequires: gcc doxygen openssl-devel
 Patch0: libevent-nonettests.patch
 Patch1: http-add-callback-to-allow-server-to-decline-and-the.patch
 Patch2: add-testcases-for-event.c-apis.patch
+
+# Temporary downstream change: revert a problematic upstream change
+# until Transmission is fixed. Please drop the patch when the Transmission
+# issue is fixed.
+# https://github.com/transmission/transmission/issues/1437
+Patch3: 0001-Revert-Fix-checking-return-value-of-the-evdns_base_r.patch
 
 %description
 Libevent additionally provides a sophisticated framework for buffered network IO, with support for sockets,
@@ -69,6 +75,9 @@ rm -f %{buildroot}%{_libdir}/*.la
 
 
 %changelog
+* Fri Jun 24 2022 dillon chen <dillon.chen@gmail.com> - 2.1.12-6
+- add patch3
+
 * Tue Nov 23 2021 Hu Bin <hubin571@huawei.com> - 2.1.12-5
 - Type:enhancement
 - ID:NA
