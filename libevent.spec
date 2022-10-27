@@ -1,6 +1,6 @@
 Name:           libevent
 Version:        2.1.12
-Release:        4
+Release:        5
 Summary:        An event notification library
 
 License:        BSD
@@ -36,6 +36,21 @@ with %{name}.
 %make_install
 rm -f %{buildroot}%{_libdir}/*.la
 
+# Fix multilib install of devel (bug #477685)
+mv %{buildroot}%{_includedir}/event2/event-config.h \
+   %{buildroot}%{_includedir}/event2/event-config-%{__isa_bits}.h
+cat > %{buildroot}%{_includedir}/event2/event-config.h << EOF
+#include <bits/wordsize.h>
+ 
+#if __WORDSIZE == 32
+#include <event2/event-config-32.h>
+#elif __WORDSIZE == 64
+#include <event2/event-config-64.h>
+#else
+#error "Unknown word size"
+#endif
+EOF
+
 %check
 %make_build check
 
@@ -68,6 +83,12 @@ rm -f %{buildroot}%{_libdir}/*.la
 
 
 %changelog
+* Thu Oct 27 2022 dongyuzhen <dongyuzhen@h-partners.com> - 2.1.12-5
+- Type:bugfix
+- CVE:NA
+- SUG:NA
+- DESC:fix the installation conflict between x86 and i686 in event-config.h
+
 * Wed Apr 21 2021 yangzhuangzhuang <yangzhuangzhuang1@huawei.com> - 2.1.12-4
 - Type:enhancement
 - ID:NA
